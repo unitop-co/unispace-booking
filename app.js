@@ -229,14 +229,20 @@ function initSpaceCarousel(){
   updateSpaceCarousel();
   resetSpaceCarouselTimer();
   const gallery=document.getElementById('spaceGallery');
-  if(!gallery||gallery.dataset.bound) return;
-  gallery.dataset.bound='1';
+  if(!gallery) return;
+  // 每次重新渲染都重新綁定（移除舊的再加新的）
   let startX=0;
-  gallery.addEventListener('touchstart',e=>{startX=e.touches[0].clientX;},{passive:true});
-  gallery.addEventListener('touchend',e=>{
+  const onTouchStart=e=>{startX=e.touches[0].clientX;};
+  const onTouchEnd=e=>{
     const dx=e.changedTouches[0].clientX-startX;
     if(Math.abs(dx)>40) goSpaceSlide(spaceSlideIdx+(dx<0?1:-1));
-  },{passive:true});
+  };
+  gallery.removeEventListener('touchstart',gallery._tsHandler);
+  gallery.removeEventListener('touchend',gallery._teHandler);
+  gallery._tsHandler=onTouchStart;
+  gallery._teHandler=onTouchEnd;
+  gallery.addEventListener('touchstart',onTouchStart,{passive:true});
+  gallery.addEventListener('touchend',onTouchEnd,{passive:true});
 }
 
 function renderBookingNotice(){
