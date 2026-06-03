@@ -15,8 +15,8 @@ let S={
 let spaceSlideIdx = 0;
 let spaceCarouselTimer = null;
 
-function refreshBks(){
-  BKS=loadLocalBks();
+async function refreshBks(){
+  try { BKS = await loadRemoteBks(); } catch(e) { BKS={}; }
   render();
 }
 const set=u=>{Object.assign(S,u);render();};
@@ -35,9 +35,6 @@ function snapshotFormState(){
   }
 }
 
-window.addEventListener('storage', e=>{
-  if(e.key===STORAGE_KEY||e.key===BLOCKS_KEY) refreshBks();
-});
 window.addEventListener('focus', refreshBks);
 
 const WD  = ['日','一','二','三','四','五','六'];
@@ -52,10 +49,8 @@ S.yr=tp.y;
 S.mo=tp.m-1;
 
 const saveBk=async b=>{
-  const all=loadLocalBks();
-  all['bk_'+Date.now()]=b;
-  saveLocalBks(all);
-  BKS=all;
+  const id='bk_'+Date.now();
+  await saveRemoteBk(id, {...b, source:'user'});
 };
 
 const dBks=ds=>Object.values(BKS).filter(b=>b.date===ds&&blocksSlot(b));
@@ -408,10 +403,10 @@ function renderLookup(){
 </div>`;
 }
 
-function initApp(){
+async function initApp(){
   try{
-    if(typeof loadLocalBks!=='function') throw new Error('config.js 未載入，請確認已一併上傳');
-    refreshBks();
+    if(typeof loadRemoteBks!=='function') throw new Error('config.js 未載入，請確認已一併上傳');
+    await refreshBks();
   }catch(e){
     console.error(e);
     const el=document.getElementById('app');
