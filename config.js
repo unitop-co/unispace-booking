@@ -128,12 +128,18 @@ async function loadRemoteBks() {
           const tw = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
           dateStr = tw; // 格式 YYYY-MM-DD
         }
+        // 修正 phone：數字格式補回開頭 0
+        let phoneStr = String(b.phone || '');
+        if (phoneStr && !phoneStr.startsWith('0') && phoneStr.length === 9) {
+          phoneStr = '0' + phoneStr;
+        }
         result[b.id] = {
           ...b,
           date: dateStr,
           sh: parseHour(b.sh),
           eh: parseHour(b.eh),
-          price: Number(String(b.price).replace(/[^0-9.]/g, '')) || 0
+          price: Number(String(b.price).replace(/[^0-9.]/g, '')) || 0,
+          phone: phoneStr
         };
       });
     }
