@@ -7,14 +7,15 @@ let calYr = 0, calMo = 0, selDate = '';
 let adminErr = '';
 let adminOk = '';
 
-function refreshBks(){
-  BKS = loadLocalBks();
+async function refreshBks(){
+  try {
+    BKS = await loadRemoteBks();
+  } catch(e) {
+    console.error('載入失敗', e);
+  }
   if(authed) render();
 }
 
-window.addEventListener('storage', e => {
-  if(e.key === STORAGE_KEY || e.key === BLOCKS_KEY) refreshBks();
-});
 window.addEventListener('focus', refreshBks);
 
 const WD  = ['日','一','二','三','四','五','六'];
@@ -44,15 +45,15 @@ function dayBks(ds){
 }
 
 /* ── Auth ── */
-function checkPw(){
+async function checkPw(){
   const pw = document.getElementById('pw')?.value || '';
   if(pw === ADMIN_PW){
     authed = true;
     const tp = twParts();
     calYr = tp.y;
     calMo = tp.m - 1;
-    refreshBks();
-    render();
+    render(); // 先顯示後台（空資料）
+    refreshBks(); // 背景載入，不阻擋畫面
   }else{
     document.getElementById('pw-err').style.display = 'block';
     document.getElementById('pw').value = '';
@@ -66,8 +67,16 @@ function logout(){ authed = false; view = 'list'; selDate = ''; render(); }
 /* ── Actions ── */
 function setFilter(f){ filter = f; render(); }
 function setView(v){ view = v; render(); }
-function markPaid(id){
-  if(markBookingPaid(id)){ refreshBks(); }
+async function markPaid(id){
+  try {
+    await markBookingPaid(id);
+    adminOk = '已確認收款';
+    adminErr = '';
+    await refreshBks();
+  } catch(e) {
+    adminErr = e.message || '操作失敗';
+    render();
+  }
 }
 function calPrev(){
   if(calMo === 0){ calYr--; calMo = 11; }
@@ -87,18 +96,19 @@ function pickCalDate(ds){
   render();
 }
 
-function hourOpts(sel, minH, maxH){
+function hourOpts(sel, minH, maxH, bookedHours){
   if(minH > maxH) return `<option value="">無可用時段</option>`;
   let o = '';
   for(let h = minH; h <= maxH; h++){
-    o += `<option value="${h}"${h === sel ? ' selected' : ''}>${fH(h)}</option>`;
+    const blocked = bookedHours && bookedHours.includes(h);
+    o += `<option value="${h}"${h === sel ? ' selected' : ''}${blocked ? ' disabled' : ''}>${fH(h)}${blocked ? ' ✖ 已預約' : ''}</option>`;
   }
   return o;
 }
 
-function endOptsFromStart(sh, minGap){
+function endOptsFromStart(sh, minGap, bookedHours){
   const minEh = sh + minGap;
-  return hourOpts(minEh, minEh, CLOSE);
+  return hourOpts(minEh, minEh, CLOSE, bookedHours);
 }
 
 /** 依開始時間更新結束時間選單（僅顯示當日剩餘時段） */
@@ -111,7 +121,16 @@ function syncAdminEndOpts(prefix){
   const minEh = sh + minGap;
   const prev = +ehEl.value;
   const sel = prev >= minEh && prev <= CLOSE ? prev : minEh;
-  ehEl.innerHTML = endOptsFromStart(sh, minGap);
+  // 計算已佔用時段
+  const list = selDate ? dayBks(selDate) : [];
+  const blocks = selDate ? dayBlocks(selDate) : [];
+  const bookedHours = [];
+  for(let h = OPEN; h < CLOSE; h++){
+    const occupied = list.some(b => blocksSlot(b) && b.sh <= h && b.eh > h);
+    const blocked = blocks.some(b => b.sh <= h && b.eh > h);
+    if(occupied || blocked) bookedHours.push(h);
+  }
+  ehEl.innerHTML = endOptsFromStart(sh, minGap, bookedHours);
   if(ehEl.options.length && sel >= minEh) ehEl.value = String(sel);
 }
 
@@ -131,7 +150,7 @@ function submitBlock(){
   }
 }
 
-function submitAdminBk(){
+async function submitAdminBk(){
   adminErr = '';
   adminOk = '';
   const name = document.getElementById('adb-name')?.value || '';
@@ -140,9 +159,9 @@ function submitAdminBk(){
   const eh = +document.getElementById('adb-eh')?.value;
   const status = document.getElementById('adb-st')?.value || 'paid';
   try{
-    addAdminBooking({ date: selDate, sh, eh, name, phone, status });
+    await addAdminBooking({ date: selDate, sh, eh, name, phone, status });
     adminOk = status === 'paid' ? '代客預約已建立（預約成功）' : '代客預約已建立（待繳費）';
-    render();
+    await refreshBks();
   }catch(e){
     adminErr = e.message || '建立失敗';
     render();
@@ -157,12 +176,17 @@ function removeBlock(id){
   }
 }
 
-function removeBk(id){
+async function removeBk(id){
   if(confirm('確定刪除此筆預約紀錄？')){
-    deleteBooking(id);
-    adminOk = '已刪除預約';
-    adminErr = '';
-    refreshBks();
+    try {
+      await deleteBooking(id);
+      adminOk = '已刪除預約';
+      adminErr = '';
+      await refreshBks();
+    } catch(e) {
+      adminErr = e.message || '刪除失敗';
+      render();
+    }
   }
 }
 
@@ -285,10 +309,17 @@ function renderDayPanel(){
   }
 
   const maxStart = Math.max(minSH, CLOSE - MIN_DUR);
-  const bkStartOpts = hourOpts(minSH, minSH, maxStart);
-  const bkEndOpts = endOptsFromStart(minSH, MIN_DUR);
-  const blkStartOpts = hourOpts(minSH, minSH, CLOSE - 1);
-  const blkEndOpts = endOptsFromStart(minSH, 1);
+  // 計算已被佔用的小時（給代客預約和關閉時段用）
+  const bookedHoursForStart = [];
+  for(let h = OPEN; h < CLOSE; h++){
+    const occupied = list.some(b => blocksSlot(b) && b.sh <= h && b.eh > h);
+    const blocked = blocks.some(b => b.sh <= h && b.eh > h);
+    if(occupied || blocked) bookedHoursForStart.push(h);
+  }
+  const bkStartOpts = hourOpts(minSH, minSH, maxStart, bookedHoursForStart);
+  const bkEndOpts = endOptsFromStart(minSH, MIN_DUR, bookedHoursForStart);
+  const blkStartOpts = hourOpts(minSH, minSH, CLOSE - 1, bookedHoursForStart);
+  const blkEndOpts = endOptsFromStart(minSH, 1, bookedHoursForStart);
 
   const adminForms = past ? `<div class="admin-note">此日期已過，僅供查看紀錄</div>` : `
     <div class="admin-panel">
@@ -382,9 +413,8 @@ function renderDash(){
 </div>`;
 }
 
-function initAdmin(){
-  BKS = loadLocalBks();
-  render();
+async function initAdmin(){
+  render(); // 先顯示登入畫面
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAdmin);
 else initAdmin();
