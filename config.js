@@ -26,6 +26,7 @@ const ICONS = {
   site:         'image/分享空間logo.png',
   chair:        'image/chair.png',
   desk:         'image/desk.png',
+  sofa:         'image/sofa.png',
   wifi:         'image/wifi.png',
   board:        'image/board.png',
   projector:    'image/projector.png',
@@ -82,7 +83,7 @@ const EQUIPMENT = [
   { icon:ICONS.audio,     name:'擴音設備', qty:'1 式' },
   { icon:ICONS.computer,  name:'電腦', qty:'1 式' },
   { icon:ICONS.fridge,    name:'冰箱', qty:'1 式' },
-  { icon:ICONS.site,      name:'沙發區', qty:'1 區' }
+  { icon:ICONS.sofa,      name:'沙發區', qty:'1 區' }
 ];
 
 const PROHIBITED = [
